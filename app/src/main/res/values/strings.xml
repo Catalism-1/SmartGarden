@@ -1,0 +1,33 @@
+<resources>
+    <string name="app_name">SmartGarden</string>
+    <string name="automatic_mode_active">Mode otomatis aktif</string>
+    <string name="switch_to_manual_first">Aktifkan mode manual terlebih dahulu</string>
+    <string name="pump_on">Pompa dinyalakan</string>
+    <string name="pump_off">Pompa dimatikan</string>
+    <string name="pump_status_on">Pompa menyala</string>
+    <string name="pump_status_off">Pompa mati</string>
+    <string name="percentage_value">%1$d%%</string>
+    <string name="temperature_value">%1$d°C</string>
+    <string name="schedule_active">Jadwal aktif</string>
+    <string name="schedule_inactive">Jadwal nonaktif</string>
+    <string name="insights_updated">Data insight diperbarui</string>
+    <string name="garden_healthy">Kondisi kebun sehat</string>
+    <string name="garden_needs_watering">Tanah kering, perlu disiram</string>
+    <string name="garden_warning">Periksa kondisi lingkungan kebun</string>
+    <string name="last_updated">Terakhir diperbarui: %1$s</string>
+    <string name="connected">Terhubung</string>
+    <string name="disconnected">Terputus</string>
+    <string name="connection_successful">Perangkat berhasil terhubung</string>
+    <string name="settings_reset_success">Pengaturan berhasil direset</string>
+    <string name="soil_moisture_label">Soil Moisture</string>
+    <string name="temperature_label">Temperature</string>
+    <string name="air_humidity_label">Humidity</string>
+    <string name="automatic_label">Automatic</string>
+    <string name="manual_label">Manual</string>
+    <string name="pump_on_label">ON</string>
+    <string name="pump_off_label">OFF</string>
+    <string name="dashboard_label">Dashboard</string>
+    <string name="schedule_label">Schedule</string>
+    <string name="insights_label">Insights</string>
+    <string name="system_label">System</string>
+</resources>
