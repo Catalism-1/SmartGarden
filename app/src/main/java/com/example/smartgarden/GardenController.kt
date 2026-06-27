@@ -9,7 +9,7 @@ import com.example.smartgarden.data.model.SensorSnapshot
 
 object GardenController {
     const val AUTO_PUMP_ON_THRESHOLD = 40
-    const val AUTO_PUMP_OFF_THRESHOLD = 45
+    const val AUTO_PUMP_OFF_THRESHOLD = 55
 
     private const val MIN_SAFE_TEMPERATURE = 10
     private const val MAX_SAFE_TEMPERATURE = 38

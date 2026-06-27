@@ -1,0 +1,23 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: smartgarden-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: smartgarden
+      MYSQL_USER: smartgarden
+      MYSQL_PASSWORD: smartgarden_dev_password
+      MYSQL_ROOT_PASSWORD: smartgarden_root_password
+    ports:
+      - "3306:3306"
+    volumes:
+      - smartgarden-mysql-data:/var/lib/mysql
+      - ./backend-api/schema.sql:/docker-entrypoint-initdb.d/001-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -usmartgarden -psmartgarden_dev_password --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  smartgarden-mysql-data:

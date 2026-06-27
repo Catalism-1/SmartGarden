@@ -27,10 +27,10 @@ class GardenControllerTest {
     }
 
     @Test
-    fun autoMode_soilAtLeast45_turnsPumpOff() {
+    fun autoMode_soilAtLeast55_turnsPumpOff() {
         val result = GardenController.evaluateAutoPumpState(
             mode = GardenMode.AUTO,
-            soilMoisture = 45,
+            soilMoisture = 55,
             currentPumpState = PumpState.ON,
         )
 
