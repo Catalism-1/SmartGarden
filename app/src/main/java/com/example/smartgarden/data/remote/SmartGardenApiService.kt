@@ -14,9 +14,18 @@ import org.json.JSONObject
 class SmartGardenApiService(
     private val config: SmartGardenApiConfig = SmartGardenApiConfig(),
 ) {
+    fun health(): ApiResponse<String> {
+        val json = request(path = "/health")
+        return ApiResponse(
+            success = json.optBoolean("success"),
+            message = json.optString("message"),
+            data = json.optJSONObject("data")?.optString("database") ?: json.optString("message"),
+        )
+    }
+
     fun getDashboard(): ApiResponse<RemoteDashboard> {
         val json = request(
-            path = "/api/garden/dashboard?deviceId=${config.deviceId.urlEncoded()}",
+            path = "/garden/dashboard?deviceId=${config.deviceId.urlEncoded()}",
         )
         return ApiResponse(
             success = json.optBoolean("success"),
@@ -28,7 +37,7 @@ class SmartGardenApiService(
     fun createManualPumpCommand(durationSeconds: Int): ApiResponse<RemotePumpCommand> {
         val json = request(
             method = "POST",
-            path = "/api/garden/pump/manual",
+            path = "/garden/pump/manual",
             body = JSONObject()
                 .put("deviceId", config.deviceId)
                 .put("durationSeconds", durationSeconds.coerceAtLeast(1)),
@@ -40,10 +49,25 @@ class SmartGardenApiService(
         )
     }
 
+    fun setManualPumpState(pumpState: PumpState): ApiResponse<RemotePumpCommand> {
+        val json = request(
+            method = "POST",
+            path = "/garden/pump/manual",
+            body = JSONObject()
+                .put("deviceId", config.deviceId)
+                .put("state", pumpState.toApiValue()),
+        )
+        return ApiResponse(
+            success = json.optBoolean("success"),
+            message = json.optString("message"),
+            data = json.optJSONObject("data")?.toPumpCommand(),
+        )
+    }
+
     fun updateMode(mode: GardenMode): ApiResponse<RemotePumpCommand> {
         val json = request(
             method = "POST",
-            path = "/api/garden/mode",
+            path = "/garden/mode",
             body = JSONObject()
                 .put("deviceId", config.deviceId)
                 .put("mode", mode.toApiValue()),
@@ -63,7 +87,7 @@ class SmartGardenApiService(
     ): ApiResponse<RemoteGardenSettings> {
         val json = request(
             method = "POST",
-            path = "/api/garden/settings/thresholds",
+            path = "/garden/settings/thresholds",
             body = JSONObject()
                 .put("deviceId", config.deviceId)
                 .put("startThreshold", startThreshold)
@@ -80,7 +104,7 @@ class SmartGardenApiService(
 
     fun getSensorHistory(limit: Int = 100): ApiResponse<List<RemoteSensorReading>> {
         val json = request(
-            path = "/api/garden/history/sensors?deviceId=${config.deviceId.urlEncoded()}&limit=${limit.coerceIn(1, 500)}",
+            path = "/garden/history/sensors?deviceId=${config.deviceId.urlEncoded()}&limit=${limit.coerceIn(1, 500)}",
         )
         return ApiResponse(
             success = json.optBoolean("success"),
@@ -91,7 +115,7 @@ class SmartGardenApiService(
 
     fun getWateringHistory(limit: Int = 100): ApiResponse<List<RemoteWateringLog>> {
         val json = request(
-            path = "/api/garden/history/watering?deviceId=${config.deviceId.urlEncoded()}&limit=${limit.coerceIn(1, 500)}",
+            path = "/garden/history/watering?deviceId=${config.deviceId.urlEncoded()}&limit=${limit.coerceIn(1, 500)}",
         )
         return ApiResponse(
             success = json.optBoolean("success"),
@@ -102,7 +126,7 @@ class SmartGardenApiService(
 
     fun getSchedules(): ApiResponse<List<RemoteWateringSchedule>> {
         val json = request(
-            path = "/api/garden/schedules?deviceId=${config.deviceId.urlEncoded()}",
+            path = "/garden/schedules?deviceId=${config.deviceId.urlEncoded()}",
         )
         return ApiResponse(
             success = json.optBoolean("success"),
@@ -114,7 +138,7 @@ class SmartGardenApiService(
     fun createSchedule(timeOfDay: String, durationSeconds: Int, isActive: Boolean): ApiResponse<Long> {
         val json = request(
             method = "POST",
-            path = "/api/garden/schedules",
+            path = "/garden/schedules",
             body = JSONObject()
                 .put("deviceId", config.deviceId)
                 .put("timeOfDay", timeOfDay)
@@ -129,7 +153,7 @@ class SmartGardenApiService(
     }
 
     private fun request(method: String = "GET", path: String, body: JSONObject? = null): JSONObject {
-        val url = URL("${config.baseUrl.trimEnd('/')}$path")
+        val url = URL("${config.baseUrl.trimEnd('/')}/${path.trimStart('/')}")
         val connection = (url.openConnection() as HttpURLConnection).apply {
             requestMethod = method
             connectTimeout = TIMEOUT_MS
@@ -197,7 +221,7 @@ class SmartGardenApiService(
 
     private fun JSONObject.toSchedule(): RemoteWateringSchedule = RemoteWateringSchedule(
         id = optLong("id"),
-        timeOfDay = optString("timeOfDay"),
+        timeOfDay = optString("timeOfDay", optString("time_of_day")),
         durationSeconds = optInt("durationSeconds"),
         isActive = optBoolean("isActive"),
     )
@@ -244,6 +268,11 @@ class SmartGardenApiService(
     private fun GardenMode.toApiValue(): String = when (this) {
         GardenMode.AUTO -> "automatic"
         GardenMode.MANUAL -> "manual"
+    }
+
+    private fun PumpState.toApiValue(): String = when (this) {
+        PumpState.ON -> "on"
+        PumpState.OFF -> "off"
     }
 
     private fun String.urlEncoded(): String = URLEncoder.encode(this, StandardCharsets.UTF_8.name())

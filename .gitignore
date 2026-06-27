@@ -21,3 +21,9 @@ backend-api/node_modules/
 backend-api/.env
 npm-debug.log*
 /SmartGarden/
+/.env
+firmware/esp8266-smartgarden/config.h
+*.apk
+*.aab
+*.sql.gz
+*.dump

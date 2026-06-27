@@ -1,6 +1,7 @@
 package com.example.smartgarden.data.local
 
 import android.content.SharedPreferences
+import com.example.smartgarden.data.model.AppConnectionMode
 import com.example.smartgarden.data.model.GardenMode
 import com.example.smartgarden.data.model.GardenSettings
 import org.junit.Assert.assertEquals
@@ -18,18 +19,27 @@ class SettingsStorageTest {
     @Test
     fun savedSettings_areLoadedTogether() {
         storage.setAutomaticMode(false)
+        storage.setConnectionMode(AppConnectionMode.LOCAL_SERVER)
+        storage.setLocalServerIp("192.168.1.10")
         storage.setScheduleEnabled(false)
         storage.setScheduleTime(18, 30)
         storage.setMoistureThreshold(55)
+        storage.setStopMoistureThreshold(70)
+        storage.setPumpSafety(maxDurationSeconds = 20, cooldownSeconds = 90)
         storage.setNotificationsEnabled(false)
 
         assertEquals(
             GardenSettings(
                 mode = GardenMode.MANUAL,
+                connectionMode = AppConnectionMode.LOCAL_SERVER,
+                localServerIp = "192.168.1.10",
                 isScheduleEnabled = false,
                 scheduleHour = 18,
                 scheduleMinute = 30,
                 moistureThreshold = 55,
+                stopMoistureThreshold = 70,
+                maxPumpDurationSeconds = 20,
+                cooldownSeconds = 90,
                 areNotificationsEnabled = false,
             ),
             storage.load(),
@@ -52,6 +62,25 @@ class SettingsStorageTest {
 
         storage.setMoistureThreshold(100)
         assertEquals(90, storage.load().moistureThreshold)
+    }
+
+    @Test
+    fun localServerSettings_arePersisted() {
+        storage.setConnectionMode(AppConnectionMode.LOCAL_SERVER)
+        storage.setLocalServerIp(" 192.168.10.20 ")
+
+        assertEquals(AppConnectionMode.LOCAL_SERVER, storage.load().connectionMode)
+        assertEquals("192.168.10.20", storage.load().localServerIp)
+    }
+
+    @Test
+    fun pumpSafetySettings_areClamped() {
+        storage.setStopMoistureThreshold(20)
+        storage.setPumpSafety(maxDurationSeconds = -5, cooldownSeconds = -10)
+
+        assertEquals(41, storage.load().stopMoistureThreshold)
+        assertEquals(1, storage.load().maxPumpDurationSeconds)
+        assertEquals(0, storage.load().cooldownSeconds)
     }
 }
 

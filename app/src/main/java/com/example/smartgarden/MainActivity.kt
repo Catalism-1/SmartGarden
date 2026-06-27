@@ -13,12 +13,21 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.cardview.widget.CardView
 import androidx.core.content.ContextCompat
 import com.example.smartgarden.data.local.SettingsStorage
+import com.example.smartgarden.data.model.AppConnectionMode
 import com.example.smartgarden.data.model.GardenDeviceState
 import com.example.smartgarden.data.model.GardenMode
 import com.example.smartgarden.data.model.GardenSettings
 import com.example.smartgarden.data.model.GardenStatus
 import com.example.smartgarden.data.model.PumpState
 import com.example.smartgarden.data.model.SensorSnapshot
+import com.example.smartgarden.data.remote.RemoteDashboard
+import com.example.smartgarden.data.remote.RemoteSensorReading
+import com.example.smartgarden.data.remote.RemoteWateringLog
+import com.example.smartgarden.data.remote.RemoteWateringSchedule
+import com.example.smartgarden.data.remote.SmartGardenApiConfig
+import com.example.smartgarden.data.remote.SmartGardenApiService
+import com.example.smartgarden.data.repository.RepositoryCallback
+import com.example.smartgarden.data.repository.SmartGardenRepository
 import com.example.smartgarden.databinding.ActivityMainBinding
 import java.text.DateFormat
 import java.util.Date
@@ -59,6 +68,9 @@ class MainActivity : AppCompatActivity() {
     private var renderedScheduleHour: Int? = null
     private var renderedScheduleMinute: Int? = null
     private var renderedThreshold: Int? = null
+    private var renderedStopThreshold: Int? = null
+    private var renderedMaxPumpDuration: Int? = null
+    private var renderedCooldown: Int? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -116,6 +128,7 @@ class MainActivity : AppCompatActivity() {
         btnAutomatic.setOnClickListener { selectMode(GardenMode.AUTO) }
         btnPumpOn.setOnClickListener { setManualPumpState(PumpState.ON) }
         btnPumpOff.setOnClickListener { setManualPumpState(PumpState.OFF) }
+        btnManualWaterDuration.setOnClickListener { requestManualWatering() }
     }
 
     private fun selectMode(mode: GardenMode) {
@@ -124,6 +137,9 @@ class MainActivity : AppCompatActivity() {
             deviceState = deviceState.copy(mode = mode)
             settingsStorage.setAutomaticMode(mode == GardenMode.AUTO)
             applyAutomaticPumpLogic()
+            if (settings.connectionMode == AppConnectionMode.LOCAL_SERVER) {
+                activeRepository().updateMode(mode, toastCallback(getString(R.string.server_mode_sent)))
+            }
         }
 
         showPage(if (mode == GardenMode.MANUAL) Page.MANUAL else Page.DASHBOARD)
@@ -141,12 +157,42 @@ class MainActivity : AppCompatActivity() {
             deviceState = deviceState.copy(pumpState = pumpState)
             renderPump()
         }
+        if (settings.connectionMode == AppConnectionMode.LOCAL_SERVER) {
+            activeRepository().setManualPumpState(
+                pumpState,
+                toastCallback(getString(if (pumpState == PumpState.ON) R.string.server_pump_on_sent else R.string.server_pump_off_sent)),
+            )
+        }
         toast(getString(if (pumpState == PumpState.ON) R.string.pump_on else R.string.pump_off))
+    }
+
+    private fun requestManualWatering() {
+        if (deviceState.mode != GardenMode.MANUAL) {
+            toast(getString(R.string.switch_to_manual_first))
+            return
+        }
+        val duration = binding.inputManualDuration.text.toString().toIntOrNull()
+            ?: settings.maxPumpDurationSeconds
+        val safeDuration = duration.coerceIn(1, settings.maxPumpDurationSeconds.coerceAtLeast(1))
+        if (settings.connectionMode == AppConnectionMode.LOCAL_SERVER) {
+            activeRepository().createManualWatering(
+                safeDuration,
+                toastCallback(getString(R.string.server_manual_watering_sent)),
+            )
+        } else {
+            deviceState = deviceState.copy(pumpState = PumpState.ON)
+            renderPump()
+            toast(getString(R.string.demo_manual_watering_started, safeDuration))
+        }
     }
 
     private fun setupSchedule() = with(binding) {
         switchSchedule.isChecked = settings.isScheduleEnabled
         seekThreshold.progress = settings.moistureThreshold
+        seekStopThreshold.progress = settings.stopMoistureThreshold
+        inputMaxPumpDuration.setText(settings.maxPumpDurationSeconds.toString())
+        inputCooldown.setText(settings.cooldownSeconds.toString())
+        inputManualDuration.setText(settings.maxPumpDurationSeconds.toString())
 
         switchSchedule.setOnCheckedChangeListener { _, checked ->
             if (settings.isScheduleEnabled != checked) {
@@ -174,13 +220,49 @@ class MainActivity : AppCompatActivity() {
                 if (settings.moistureThreshold != value) {
                     settings = settings.copy(moistureThreshold = value)
                     settingsStorage.setMoistureThreshold(value)
+                    if (settings.stopMoistureThreshold <= value) {
+                        val stopValue = (value + DEFAULT_HYSTERESIS_GAP).coerceAtMost(
+                            GardenSettings.MAX_STOP_MOISTURE_THRESHOLD,
+                        )
+                        settings = settings.copy(stopMoistureThreshold = stopValue)
+                        settingsStorage.setStopMoistureThreshold(stopValue)
+                        seekStopThreshold.progress = stopValue
+                    }
                     renderedThreshold = null
+                    renderedStopThreshold = null
                     renderSchedule()
                     renderInsights()
                 }
             }
         })
+        seekStopThreshold.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                val safeValue = progress.coerceIn(
+                    settings.moistureThreshold + 1,
+                    GardenSettings.MAX_STOP_MOISTURE_THRESHOLD,
+                )
+                if (fromUser && safeValue != progress) {
+                    seekBar?.progress = safeValue
+                } else {
+                    tvStopThreshold.text = getString(R.string.percentage_value, safeValue)
+                }
+            }
+
+            override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
+
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                val value = (seekBar?.progress ?: GardenSettings.DEFAULT_STOP_MOISTURE_THRESHOLD)
+                    .coerceIn(settings.moistureThreshold + 1, GardenSettings.MAX_STOP_MOISTURE_THRESHOLD)
+                if (settings.stopMoistureThreshold != value) {
+                    settings = settings.copy(stopMoistureThreshold = value)
+                    settingsStorage.setStopMoistureThreshold(value)
+                    renderedStopThreshold = null
+                    renderSchedule()
+                }
+            }
+        })
         btnScheduleTime.setOnClickListener { openTimePicker() }
+        btnSyncGardenSettings.setOnClickListener { syncGardenSettingsToServer() }
     }
 
     private fun openTimePicker() {
@@ -189,32 +271,59 @@ class MainActivity : AppCompatActivity() {
                 settings = settings.copy(scheduleHour = selectedHour, scheduleMinute = selectedMinute)
                 settingsStorage.setScheduleTime(selectedHour, selectedMinute)
                 renderSchedule()
+                if (settings.connectionMode == AppConnectionMode.LOCAL_SERVER && settings.isScheduleEnabled) {
+                    activeRepository().createSchedule(
+                        String.format(Locale.US, "%02d:%02d", selectedHour, selectedMinute),
+                        settings.maxPumpDurationSeconds.coerceAtMost(60),
+                        true,
+                        toastCallback(getString(R.string.server_schedule_sent)),
+                    )
+                }
             }
         }, settings.scheduleHour, settings.scheduleMinute, true).show()
     }
 
     private fun setupInsights() {
         binding.btnRefreshInsights.setOnClickListener {
-            advanceSimulation()
-            toast(getString(R.string.insights_updated))
+            if (settings.connectionMode == AppConnectionMode.LOCAL_SERVER) {
+                refreshFromLocalServer(showSuccessToast = true)
+            } else {
+                advanceSimulation()
+                toast(getString(R.string.insights_updated))
+            }
         }
     }
 
     private fun setupSystem() = with(binding) {
         switchNotifications.isChecked = settings.areNotificationsEnabled
+        switchLocalServer.isChecked = settings.connectionMode == AppConnectionMode.LOCAL_SERVER
+        inputLocalServerIp.setText(settings.localServerIp)
         switchNotifications.setOnCheckedChangeListener { _, checked ->
             if (settings.areNotificationsEnabled != checked) {
                 settings = settings.copy(areNotificationsEnabled = checked)
                 settingsStorage.setNotificationsEnabled(checked)
             }
         }
+        switchLocalServer.setOnCheckedChangeListener { _, checked ->
+            val mode = if (checked) AppConnectionMode.LOCAL_SERVER else AppConnectionMode.DEMO
+            if (settings.connectionMode != mode) {
+                settings = settings.copy(connectionMode = mode)
+                settingsStorage.setConnectionMode(mode)
+                renderConnectionMode()
+            }
+        }
         btnReconnect.setOnClickListener {
+            if (settings.connectionMode == AppConnectionMode.LOCAL_SERVER) {
+                refreshFromLocalServer(showSuccessToast = true)
+                return@setOnClickListener
+            }
             if (!deviceState.isConnected) {
                 deviceState = deviceState.copy(isConnected = true)
                 renderConnection()
             }
             toast(getString(R.string.connection_successful))
         }
+        btnTestLocalServer.setOnClickListener { saveAndTestLocalServer() }
         btnResetSettings.setOnClickListener { resetSettings() }
     }
 
@@ -224,7 +333,13 @@ class MainActivity : AppCompatActivity() {
         applyAutomaticPumpLogic()
         switchSchedule.isChecked = settings.isScheduleEnabled
         seekThreshold.progress = settings.moistureThreshold
+        seekStopThreshold.progress = settings.stopMoistureThreshold
+        inputMaxPumpDuration.setText(settings.maxPumpDurationSeconds.toString())
+        inputCooldown.setText(settings.cooldownSeconds.toString())
+        inputManualDuration.setText(settings.maxPumpDurationSeconds.toString())
         switchNotifications.isChecked = settings.areNotificationsEnabled
+        switchLocalServer.isChecked = false
+        inputLocalServerIp.setText("")
         invalidateRenderCache()
         renderAll()
         toast(getString(R.string.settings_reset_success))
@@ -241,6 +356,9 @@ class MainActivity : AppCompatActivity() {
         renderedScheduleHour = null
         renderedScheduleMinute = null
         renderedThreshold = null
+        renderedStopThreshold = null
+        renderedMaxPumpDuration = null
+        renderedCooldown = null
     }
 
     private fun renderAll() {
@@ -251,6 +369,7 @@ class MainActivity : AppCompatActivity() {
         renderDeviceReadings()
         renderInsights()
         renderConnection()
+        renderConnectionMode()
     }
 
     private fun showPage(page: Page) {
@@ -321,8 +440,27 @@ class MainActivity : AppCompatActivity() {
             tvThreshold.text = getString(R.string.percentage_value, settings.moistureThreshold)
             renderedThreshold = settings.moistureThreshold
         }
+        if (renderedStopThreshold != settings.stopMoistureThreshold) {
+            tvStopThreshold.text = getString(R.string.percentage_value, settings.stopMoistureThreshold)
+            seekStopThreshold.progress = settings.stopMoistureThreshold
+            renderedStopThreshold = settings.stopMoistureThreshold
+        }
+        if (renderedMaxPumpDuration != settings.maxPumpDurationSeconds) {
+            if (!inputMaxPumpDuration.hasFocus()) {
+                inputMaxPumpDuration.setText(settings.maxPumpDurationSeconds.toString())
+                inputManualDuration.setText(settings.maxPumpDurationSeconds.toString())
+            }
+            renderedMaxPumpDuration = settings.maxPumpDurationSeconds
+        }
+        if (renderedCooldown != settings.cooldownSeconds) {
+            if (!inputCooldown.hasFocus()) {
+                inputCooldown.setText(settings.cooldownSeconds.toString())
+            }
+            renderedCooldown = settings.cooldownSeconds
+        }
         if (renderedScheduleEnabled != settings.isScheduleEnabled) {
             seekThreshold.isEnabled = settings.isScheduleEnabled
+            seekStopThreshold.isEnabled = settings.isScheduleEnabled
             btnScheduleTime.isEnabled = settings.isScheduleEnabled
             tvScheduleState.setText(
                 if (settings.isScheduleEnabled) R.string.schedule_active else R.string.schedule_inactive
@@ -346,6 +484,10 @@ class MainActivity : AppCompatActivity() {
             R.string.last_updated,
             DateFormat.getTimeInstance(DateFormat.SHORT).format(Date()),
         )
+        if (settings.connectionMode == AppConnectionMode.DEMO) {
+            tvSensorHistory.setText(R.string.demo_sensor_history)
+            tvWateringHistory.setText(R.string.demo_watering_history)
+        }
     }
 
     private fun advanceSimulation() {
@@ -401,6 +543,200 @@ class MainActivity : AppCompatActivity() {
         renderedConnection = deviceState.isConnected
     }
 
+    private fun renderConnectionMode() = with(binding) {
+        val localServerEnabled = settings.connectionMode == AppConnectionMode.LOCAL_SERVER
+        inputLocalServerIp.isEnabled = localServerEnabled
+        btnTestLocalServer.isEnabled = localServerEnabled
+        val ipAddress = settings.localServerIp.ifBlank { getString(R.string.local_server_ip_placeholder) }
+        tvApiBaseUrl.text = if (localServerEnabled) {
+            getString(R.string.local_server_url_preview, ipAddress)
+        } else {
+            getString(R.string.demo_mode_active)
+        }
+    }
+
+    private fun saveAndTestLocalServer() {
+        val ipAddress = binding.inputLocalServerIp.text.toString().trim()
+        settings = settings.copy(
+            connectionMode = AppConnectionMode.LOCAL_SERVER,
+            localServerIp = ipAddress,
+        )
+        settingsStorage.setConnectionMode(AppConnectionMode.LOCAL_SERVER)
+        settingsStorage.setLocalServerIp(ipAddress)
+        binding.switchLocalServer.isChecked = true
+        renderConnectionMode()
+        if (!isValidLocalIp(ipAddress)) {
+            deviceState = deviceState.copy(isConnected = false)
+            renderConnection()
+            binding.tvLocalServerState.setText(R.string.local_server_invalid_ip)
+            toast(getString(R.string.local_server_invalid_ip))
+            return
+        }
+        activeRepository().health(object : RepositoryCallback<String> {
+            override fun onSuccess(data: String) = runOnUiThread {
+                deviceState = deviceState.copy(isConnected = true)
+                renderConnection()
+                binding.tvLocalServerState.text = getString(R.string.local_server_connected)
+                toast(getString(R.string.local_server_connected))
+                refreshFromLocalServer(showSuccessToast = false)
+            }
+
+            override fun onError(error: Throwable) = runOnUiThread {
+                deviceState = deviceState.copy(isConnected = false)
+                renderConnection()
+                binding.tvLocalServerState.text = getString(R.string.local_server_failed, error.safeMessage())
+                toast(getString(R.string.local_server_failed_short))
+            }
+        })
+    }
+
+    private fun refreshFromLocalServer(showSuccessToast: Boolean) {
+        if (!canUseLocalServer()) return
+        val repository = activeRepository()
+        repository.loadDashboard(object : RepositoryCallback<RemoteDashboard> {
+            override fun onSuccess(data: RemoteDashboard) = runOnUiThread {
+                applyRemoteDashboard(data)
+                if (showSuccessToast) toast(getString(R.string.insights_updated))
+            }
+
+            override fun onError(error: Throwable) = runOnUiThread {
+                deviceState = deviceState.copy(isConnected = false)
+                renderConnection()
+                toast(getString(R.string.local_server_failed, error.safeMessage()))
+            }
+        })
+        repository.loadSensorHistory(5, object : RepositoryCallback<List<RemoteSensorReading>> {
+            override fun onSuccess(data: List<RemoteSensorReading>) = runOnUiThread { renderSensorHistory(data) }
+            override fun onError(error: Throwable) = Unit
+        })
+        repository.loadWateringHistory(5, object : RepositoryCallback<List<RemoteWateringLog>> {
+            override fun onSuccess(data: List<RemoteWateringLog>) = runOnUiThread { renderWateringHistory(data) }
+            override fun onError(error: Throwable) = Unit
+        })
+        repository.loadSchedules(object : RepositoryCallback<List<RemoteWateringSchedule>> {
+            override fun onSuccess(data: List<RemoteWateringSchedule>) = runOnUiThread { renderScheduleList(data) }
+            override fun onError(error: Throwable) = Unit
+        })
+    }
+
+    private fun syncGardenSettingsToServer() {
+        val maxDuration = binding.inputMaxPumpDuration.text.toString().toIntOrNull()
+            ?: settings.maxPumpDurationSeconds
+        val cooldown = binding.inputCooldown.text.toString().toIntOrNull()
+            ?: settings.cooldownSeconds
+        settings = settings.copy(
+            maxPumpDurationSeconds = maxDuration.coerceIn(1, 3600),
+            cooldownSeconds = cooldown.coerceIn(0, 86400),
+        )
+        settingsStorage.setPumpSafety(settings.maxPumpDurationSeconds, settings.cooldownSeconds)
+        renderSchedule()
+
+        if (!canUseLocalServer()) return
+        activeRepository().updateThresholds(
+            startThreshold = settings.moistureThreshold,
+            stopThreshold = settings.stopMoistureThreshold,
+            maxPumpDurationSeconds = settings.maxPumpDurationSeconds,
+            cooldownSeconds = settings.cooldownSeconds,
+            callback = toastCallback(getString(R.string.server_settings_sent)),
+        )
+    }
+
+    private fun applyRemoteDashboard(dashboard: RemoteDashboard) {
+        dashboard.latestReading?.let { reading ->
+            deviceState = deviceState.copy(
+                soilMoisture = reading.soilMoisturePercent.toInt(),
+                temperature = reading.temperatureC.toInt(),
+                airHumidity = reading.airHumidityPercent.toInt(),
+                pumpState = reading.pumpState,
+            )
+        }
+        dashboard.device?.let { device ->
+            deviceState = deviceState.copy(isConnected = device.isConnected)
+        }
+        dashboard.settings?.let { remoteSettings ->
+            settings = settings.copy(
+                mode = remoteSettings.mode,
+                moistureThreshold = remoteSettings.startThreshold,
+                stopMoistureThreshold = remoteSettings.stopThreshold,
+                maxPumpDurationSeconds = remoteSettings.maxPumpDurationSeconds,
+                cooldownSeconds = remoteSettings.cooldownSeconds,
+            )
+            deviceState = deviceState.copy(mode = remoteSettings.mode)
+            settingsStorage.setAutomaticMode(remoteSettings.mode == GardenMode.AUTO)
+            settingsStorage.setMoistureThreshold(remoteSettings.startThreshold)
+            settingsStorage.setStopMoistureThreshold(remoteSettings.stopThreshold)
+            settingsStorage.setPumpSafety(remoteSettings.maxPumpDurationSeconds, remoteSettings.cooldownSeconds)
+            renderedThreshold = null
+            renderedStopThreshold = null
+            renderedMaxPumpDuration = null
+            renderedCooldown = null
+        }
+        renderMode()
+        renderPump()
+        renderSchedule()
+        renderDeviceReadings()
+        renderInsights()
+        renderConnection()
+    }
+
+    private fun renderSensorHistory(history: List<RemoteSensorReading>) {
+        binding.tvSensorHistory.text = if (history.isEmpty()) {
+            getString(R.string.sensor_history_empty)
+        } else {
+            history.joinToString(separator = "\n", prefix = getString(R.string.sensor_history_title) + "\n") {
+                "• ${it.soilMoisturePercent.toInt()}% tanah, ${it.temperatureC.toInt()}°C, ${it.airHumidityPercent.toInt()}%"
+            }
+        }
+    }
+
+    private fun renderWateringHistory(history: List<RemoteWateringLog>) {
+        binding.tvWateringHistory.text = if (history.isEmpty()) {
+            getString(R.string.watering_history_empty)
+        } else {
+            history.joinToString(separator = "\n", prefix = getString(R.string.watering_history_title) + "\n") {
+                "• ${it.source} ${it.durationSeconds}s - ${it.resultStatus}"
+            }
+        }
+    }
+
+    private fun renderScheduleList(schedules: List<RemoteWateringSchedule>) {
+        binding.tvScheduleList.text = if (schedules.isEmpty()) {
+            getString(R.string.schedule_server_empty)
+        } else {
+            schedules.joinToString(separator = "\n", prefix = getString(R.string.schedule_server_title) + "\n") {
+                val state = if (it.isActive) getString(R.string.schedule_active) else getString(R.string.schedule_inactive)
+                "• ${it.timeOfDay.take(5)} - ${it.durationSeconds}s - $state"
+            }
+        }
+    }
+
+    private fun canUseLocalServer(): Boolean {
+        if (settings.connectionMode != AppConnectionMode.LOCAL_SERVER) return false
+        if (!isValidLocalIp(settings.localServerIp)) {
+            toast(getString(R.string.local_server_invalid_ip))
+            return false
+        }
+        return true
+    }
+
+    private fun activeRepository(): SmartGardenRepository = SmartGardenRepository(
+        apiService = SmartGardenApiService(SmartGardenApiConfig.fromLaptopIp(settings.localServerIp)),
+    )
+
+    private fun <T> toastCallback(successMessage: String): RepositoryCallback<T> = object : RepositoryCallback<T> {
+        override fun onSuccess(data: T) = runOnUiThread { toast(successMessage) }
+        override fun onError(error: Throwable) = runOnUiThread {
+            toast(getString(R.string.local_server_failed, error.safeMessage()))
+        }
+    }
+
+    private fun isValidLocalIp(value: String): Boolean {
+        if (value.isBlank()) return false
+        return value.matches(Regex("""^([A-Za-z0-9.-]+)$""")) && !value.startsWith("http")
+    }
+
+    private fun Throwable.safeMessage(): String = message?.take(80) ?: javaClass.simpleName
+
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putString(KEY_PAGE, currentPage.name)
         outState.putString(KEY_PUMP_STATE, deviceState.pumpState.name)
@@ -421,6 +757,7 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val KEY_PAGE = "current_page"
         private const val KEY_PUMP_STATE = "pump_state"
+        private const val DEFAULT_HYSTERESIS_GAP = 15
         private val SIMULATED_READINGS = listOf(
             SensorSnapshot(moisture = 65, temperature = 24, humidity = 48),
             SensorSnapshot(moisture = 38, temperature = 25, humidity = 50),

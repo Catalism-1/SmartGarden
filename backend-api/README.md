@@ -10,6 +10,15 @@ ESP8266 -> GET command/config dari API secara berkala
 
 Backend listen di `0.0.0.0:3000`.
 
+Default database lokal:
+
+```text
+host: localhost
+port: 3306
+database: smart_garden
+user/password: lihat backend-api/.env
+```
+
 ## Menjalankan lokal
 
 1. Jalankan MySQL:

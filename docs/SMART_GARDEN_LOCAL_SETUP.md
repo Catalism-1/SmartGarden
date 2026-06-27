@@ -25,7 +25,7 @@ Database lokal:
 ```text
 host: 127.0.0.1
 port: 3306
-database: smartgarden
+database: smart_garden
 user: smartgarden
 password: smartgarden_dev_password
 ```

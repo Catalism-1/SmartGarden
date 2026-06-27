@@ -116,6 +116,47 @@ async function createCommand(devicePk, commandType, payload) {
   return rows[0];
 }
 
+async function createDueScheduleCommand(devicePk) {
+  if (await hasPendingCommand(devicePk, "manual_watering")) return null;
+
+  const now = new Date();
+  const currentMinute = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  const today = now.toISOString().slice(0, 10);
+
+  const [rows] = await pool.execute(
+    `
+      SELECT id, time_of_day, duration_seconds, last_executed_at
+      FROM watering_schedules
+      WHERE device_id = ?
+        AND is_active = TRUE
+      ORDER BY time_of_day ASC
+    `,
+    [devicePk],
+  );
+
+  const dueSchedule = rows.find((schedule) => {
+    const timeValue = String(schedule.time_of_day).slice(0, 5);
+    const lastExecutedDate = schedule.last_executed_at
+      ? new Date(schedule.last_executed_at).toISOString().slice(0, 10)
+      : null;
+    return timeValue === currentMinute && lastExecutedDate !== today;
+  });
+
+  if (!dueSchedule) return null;
+
+  await pool.execute(
+    "UPDATE watering_schedules SET last_executed_at = CURRENT_TIMESTAMP WHERE id = ?",
+    [dueSchedule.id],
+  );
+
+  return createCommand(devicePk, "manual_watering", {
+    source: "schedule",
+    scheduleId: dueSchedule.id,
+    durationSeconds: dueSchedule.duration_seconds,
+    reason: "scheduled watering",
+  });
+}
+
 function normalizeCommand(row) {
   if (!row) return null;
   return {
@@ -285,6 +326,7 @@ app.get("/api/iot/commands/next", async (req, res) => {
   const deviceId = asDeviceId(req.query.deviceId || req.query.device_id);
   try {
     const { device } = await ensureSettings(deviceId);
+    await createDueScheduleCommand(device.id);
     const connection = await pool.getConnection();
     try {
       await connection.beginTransaction();
@@ -485,9 +527,17 @@ app.post("/api/garden/mode", async (req, res) => {
 
 app.post("/api/garden/pump/manual", async (req, res) => {
   const deviceId = asDeviceId(req.body?.deviceId || req.body?.device_id);
+  const requestedState = asPumpState(req.body?.state || req.body?.pumpState || req.body?.pump_state);
   const durationSeconds = clampInteger(req.body?.durationSeconds ?? req.body?.duration_seconds, 1, 3600, 15);
   try {
     const { device, settings } = await ensureSettings(deviceId);
+    if (requestedState) {
+      const command = await createCommand(device.id, requestedState === "on" ? "pump_on" : "pump_off", {
+        source: "manual",
+        state: requestedState,
+      });
+      return ok(res, `Manual pump ${requestedState} command created`, normalizeCommand(command), 201);
+    }
     const safeDuration = Math.min(durationSeconds, settings.max_pump_duration_seconds);
     const command = await createCommand(device.id, "manual_watering", {
       source: "manual",

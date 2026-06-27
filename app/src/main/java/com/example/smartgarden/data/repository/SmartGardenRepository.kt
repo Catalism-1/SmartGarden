@@ -1,6 +1,7 @@
 package com.example.smartgarden.data.repository
 
 import com.example.smartgarden.data.model.GardenMode
+import com.example.smartgarden.data.model.PumpState
 import com.example.smartgarden.data.remote.ApiResponse
 import com.example.smartgarden.data.remote.RemoteDashboard
 import com.example.smartgarden.data.remote.RemoteGardenSettings
@@ -16,12 +17,20 @@ class SmartGardenRepository(
     private val apiService: SmartGardenApiService = SmartGardenApiService(),
     private val executor: ExecutorService = Executors.newSingleThreadExecutor(),
 ) {
+    fun health(callback: RepositoryCallback<String>) {
+        execute(callback) { apiService.health() }
+    }
+
     fun loadDashboard(callback: RepositoryCallback<RemoteDashboard>) {
         execute(callback) { apiService.getDashboard() }
     }
 
     fun createManualWatering(durationSeconds: Int, callback: RepositoryCallback<RemotePumpCommand>) {
         execute(callback) { apiService.createManualPumpCommand(durationSeconds) }
+    }
+
+    fun setManualPumpState(pumpState: PumpState, callback: RepositoryCallback<RemotePumpCommand>) {
+        execute(callback) { apiService.setManualPumpState(pumpState) }
     }
 
     fun updateMode(mode: GardenMode, callback: RepositoryCallback<RemotePumpCommand>) {

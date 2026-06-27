@@ -712,7 +712,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_alignParentEnd="true"
-                            android:text="45%"
+                            android:text="40%"
                             android:textColor="#2D6A4F"
                             android:textSize="15sp"
                             android:textStyle="bold" />
@@ -725,7 +725,7 @@
                         android:layout_marginTop="8dp"
                         android:max="90"
                         android:min="40"
-                        android:progress="45"
+                        android:progress="40"
                         android:progressTint="#2D6A4F"
                         android:thumbTint="#2D6A4F" />
 
@@ -733,6 +733,94 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="Pompa otomatis aktif saat kelembapan berada di bawah batas ini."
+                        android:textColor="#748A7F"
+                        android:textSize="12sp" />
+
+                    <RelativeLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="20dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Batas berhenti siram"
+                            android:textColor="#333333"
+                            android:textSize="15sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/tvStopThreshold"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_alignParentEnd="true"
+                            android:text="55%"
+                            android:textColor="#2D6A4F"
+                            android:textSize="15sp"
+                            android:textStyle="bold" />
+                    </RelativeLayout>
+
+                    <SeekBar
+                        android:id="@+id/seekStopThreshold"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:max="95"
+                        android:min="41"
+                        android:progress="55"
+                        android:progressTint="#2D6A4F"
+                        android:thumbTint="#2D6A4F" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Pompa otomatis berhenti saat kelembapan mencapai batas ini."
+                        android:textColor="#748A7F"
+                        android:textSize="12sp" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="20dp"
+                        android:orientation="horizontal">
+
+                        <EditText
+                            android:id="@+id/inputMaxPumpDuration"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginEnd="6dp"
+                            android:layout_weight="1"
+                            android:hint="Max detik"
+                            android:inputType="number"
+                            android:textColor="#333333"
+                            android:textSize="14sp" />
+
+                        <EditText
+                            android:id="@+id/inputCooldown"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="6dp"
+                            android:layout_weight="1"
+                            android:hint="Cooldown detik"
+                            android:inputType="number"
+                            android:textColor="#333333"
+                            android:textSize="14sp" />
+                    </LinearLayout>
+
+                    <Button
+                        android:id="@+id/btnSyncGardenSettings"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:text="Simpan ke server lokal"
+                        android:textAllCaps="false" />
+
+                    <TextView
+                        android:id="@+id/tvScheduleList"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:text="Jadwal server: mode demo aktif"
                         android:textColor="#748A7F"
                         android:textSize="12sp" />
                 </LinearLayout>
@@ -855,6 +943,24 @@
                 android:layout_marginTop="24dp"
                 android:text="Perbarui data"
                 android:textAllCaps="false" />
+
+            <TextView
+                android:id="@+id/tvSensorHistory"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="18dp"
+                android:text="History sensor: mode demo"
+                android:textColor="#748A7F"
+                android:textSize="12sp" />
+
+            <TextView
+                android:id="@+id/tvWateringHistory"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="History penyiraman: mode demo"
+                android:textColor="#748A7F"
+                android:textSize="12sp" />
         </LinearLayout>
     </ScrollView>
 
@@ -922,6 +1028,51 @@
                         android:textAllCaps="false" />
 
                     <androidx.appcompat.widget.SwitchCompat
+                        android:id="@+id/switchLocalServer"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="18dp"
+                        android:text="Gunakan Server Lokal"
+                        android:textColor="#333333"
+                        android:textSize="15sp" />
+
+                    <EditText
+                        android:id="@+id/inputLocalServerIp"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:hint="IP laptop, contoh 192.168.1.10"
+                        android:inputType="textUri"
+                        android:textColor="#333333"
+                        android:textSize="14sp" />
+
+                    <TextView
+                        android:id="@+id/tvApiBaseUrl"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:text="Mode Demo aktif"
+                        android:textColor="#748A7F"
+                        android:textSize="12sp" />
+
+                    <Button
+                        android:id="@+id/btnTestLocalServer"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="10dp"
+                        android:text="Simpan dan test server"
+                        android:textAllCaps="false" />
+
+                    <TextView
+                        android:id="@+id/tvLocalServerState"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:text="Server lokal belum dites"
+                        android:textColor="#748A7F"
+                        android:textSize="12sp" />
+
+                    <androidx.appcompat.widget.SwitchCompat
                         android:id="@+id/switchNotifications"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
@@ -979,6 +1130,17 @@
             android:textSize="16sp"
             android:textStyle="bold" />
 
+        <EditText
+            android:id="@+id/inputManualDuration"
+            android:layout_width="240dp"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp"
+            android:gravity="center"
+            android:hint="Durasi siram manual (detik)"
+            android:inputType="number"
+            android:textColor="#333333"
+            android:textSize="14sp" />
+
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -1019,6 +1181,14 @@
                     android:textStyle="bold" />
             </androidx.cardview.widget.CardView>
         </LinearLayout>
+
+        <Button
+            android:id="@+id/btnManualWaterDuration"
+            android:layout_width="240dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:text="Siram sesuai durasi"
+            android:textAllCaps="false" />
     </LinearLayout>
 
     <LinearLayout
